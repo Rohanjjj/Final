@@ -1,8 +1,7 @@
-// viewer/src/App.js
 import React, { useRef, useEffect } from 'react';
 import io from 'socket.io-client';
 
-const socket = io('https://final-9zfr.onrender.com'); // Replace with your server URL
+const socket = io('https://final-9zfr.onrender.com'); 
 
 function Viewer() {
   const videoRef = useRef(null);
