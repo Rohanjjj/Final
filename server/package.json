@@ -1,0 +1,31 @@
+{
+  "name": "webrtc-app",
+  "version": "1.0.0",
+  "description": "A simple WebRTC application using Socket.IO for live video streaming.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js" 
+  },
+  "dependencies": {
+    "express": "^4.17.3",
+    "socket.io": "^4.4.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.15"  // Optional: for development
+  },
+  "engines": {
+    "node": ">=14.x"  // Specify the Node.js version
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rohanjjj/Final"  // Replace with your repo URL
+  },
+  "keywords": [
+    "webrtc",
+    "socket.io",
+    "video",
+    "streaming"
+  ],
+  "author": "Rohan"
+}
