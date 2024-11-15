@@ -12,20 +12,19 @@
     "socket.io": "^4.4.1"
   },
   "devDependencies": {
-    "nodemon": "^2.0.15"  // Optional: for development
+    "nodemon": "^2.0.15"  
   },
   "engines": {
-    "node": ">=14.x"  // Specify the Node.js version
+    "node": ">=14.x"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Rohanjjj/Final"  // Replace with your repo URL
+    "url": "https://github.com/Rohanjjj/Final" 
   },
   "keywords": [
     "webrtc",
     "socket.io",
     "video",
     "streaming"
-  ],
-  "author": "Rohan"
+  ]
 }
