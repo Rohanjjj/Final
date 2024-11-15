@@ -12,7 +12,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const remoteVideo = document.getElementById('remoteVideo');
-        const socket = io();
+        const socket = io('wss://final-9zfr.onrender.com');
         let peerConnection;
 
         socket.on('offer', async (offer) => {
