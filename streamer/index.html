@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streamer</title>
+</head>
+<body>
+    <h1>WebRTC Streamer</h1>
+    <video id="localVideo" autoplay playsinline></video>
+    <button id="startButton">Start Streaming</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const startButton = document.getElementById('startButton');
+        const socket = io();
+
+        let mediaStream;
+        let peerConnection;
+
+        startButton.onclick = async () => {
+            mediaStream = await navigator.mediaDevices.getUser Media({ video: true, audio: true });
+            localVideo.srcObject = mediaStream;
+
+            peerConnection = new RTCPeerConnection();
+            mediaStream.getTracks().forEach(track => peerConnection.addTrack(track, mediaStream));
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', event.candidate);
+                }
+            };
+
+            peerConnection.ontrack = (event) => {
+                const remoteVideo = document.createElement('video');
+                remoteVideo.srcObject = event.streams[0];
+                remoteVideo.autoplay = true;
+                document.body.appendChild(remoteVideo);
+            };
+
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('offer', offer);
+        };
+
+        socket.on('answer', async (answer) => {
+            await peerConnection.setRemoteDescription(answer);
+        });
+
+        socket.on('ice-candidate', async (candidate) => {
+            await peerConnection.addIceCandidate(candidate);
+        });
+    </script>
+</body>
+</html>
