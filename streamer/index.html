@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Streamer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+    video {
+      border: 1px solid #ccc;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Streamer</h1>
+  <video id="video" autoplay muted width="600" height="400"></video>
+  <button id="startStreaming">Start Streaming</button>
+
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+  <script>
+    const socket = io('https://final-9zfr.onrender.com'); // Replace with your server URL
+    const videoElement = document.getElementById('video');
+    const startStreamingButton = document.getElementById('startStreaming');
+    let mediaStream = null;
+
+    // Get access to the webcam
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then((stream) => {
+        mediaStream = stream;
+        videoElement.srcObject = stream;
+
+        // Notify the server that this client is the streamer
+        socket.emit('start-stream');
+      })
+      .catch((err) => {
+        console.error('Error accessing webcam:', err);
+      });
+
+    // Start streaming button handler
+    startStreamingButton.addEventListener('click', () => {
+      if (mediaStream) {
+        const mediaRecorder = new MediaRecorder(mediaStream);
+        mediaRecorder.ondataavailable = (event) => {
+          socket.emit('stream', event.data); // Send video data to server
+        };
+        mediaRecorder.start(100); // Sends data in chunks every 100ms
+      }
+    });
+
+    // Disconnect socket on page unload
+    window.addEventListener('beforeunload', () => {
+      socket.disconnect();
+    });
+  </script>
+</body>
+</html>
