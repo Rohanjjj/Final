@@ -1,0 +1,27 @@
+{
+  "services": [
+    {
+      "name": "live-streaming-server",
+      "type": "web",
+      "env": "node",
+      "buildCommand": "npm install",
+      "startCommand": "node server.js",
+      "envVars": [
+        {
+          "key": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "key": "PORT",
+          "value": "8080"
+        },
+        {
+          "key": "MONGO_URI",
+          "value": "mongodb://your-mongodb-uri:27017" // Replace with your actual MongoDB URI
+        }
+      ],
+      "region": "us",
+      "plan": "free"
+    }
+  ]
+}
