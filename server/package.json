@@ -1,17 +1,31 @@
 {
-  "name": "streaming-server",
+  "name": "live-streaming-server",
   "version": "1.0.0",
-  "description": "Live streaming server with Socket.IO",
-  "main": "index.js",
+  "description": "A live video/audio streaming server with user authentication and chat functionality.",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.17.1",
-    "http": "^0.0.1-security",
-    "socket.io": "^4.0.1"
+    "bcrypt": "^5.1.0",
+    "mongodb": "^5.7.0",
+    "uuid": "^9.0.0",
+    "ws": "^8.13.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
   },
   "engines": {
-    "node": ">=14.0.0"
-  }
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "live-streaming",
+    "websocket",
+    "webrtc",
+    "mongodb",
+    "chat"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
 }
