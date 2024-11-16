@@ -1,65 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Streamer</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      margin: 20px;
-    }
-    video {
-      border: 1px solid #ccc;
-    }
-    button {
-      margin-top: 20px;
-      padding: 10px 20px;
-      font-size: 16px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Streamer</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Streamer</h1>
-  <video id="video" autoplay muted width="600" height="400"></video>
-  <button id="startStreaming">Start Streaming</button>
-
-  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
-  <script>
-    const socket = io('https://final-9zfr.onrender.com'); // Replace with your server URL
-    const videoElement = document.getElementById('video');
-    const startStreamingButton = document.getElementById('startStreaming');
-    let mediaStream = null;
-
-    // Get access to the webcam
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        mediaStream = stream;
-        videoElement.srcObject = stream;
-
-        // Notify the server that this client is the streamer
-        socket.emit('start-stream');
-      })
-      .catch((err) => {
-        console.error('Error accessing webcam:', err);
-      });
-
-    // Start streaming button handler
-    startStreamingButton.addEventListener('click', () => {
-      if (mediaStream) {
-        const mediaRecorder = new MediaRecorder(mediaStream);
-        mediaRecorder.ondataavailable = (event) => {
-          socket.emit('stream', event.data); // Send video data to server
-        };
-        mediaRecorder.start(100); // Sends data in chunks every 100ms
-      }
-    });
-
-    // Disconnect socket on page unload
-    window.addEventListener('beforeunload', () => {
-      socket.disconnect();
-    });
-  </script>
+    <div class="container">
+        <header>
+            <h1>🎥 Live Streamer</h1>
+        </header>
+        <main>
+            <div class="stream">
+                <video id="localVideo" autoplay muted playsinline></video>
+                <div id="streamStatus">🔴 Streaming...</div>
+            </div>
+            <div class="chat">
+                <h2>Comments</h2>
+                <div id="comments" class="comments"></div>
+                <form id="commentForm">
+                    <input id="commentInput" type="text" placeholder="Enter your comment" required />
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+        </main>
+    </div>
+    <script src="script.js"></script>
 </body>
 </html>
