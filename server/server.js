@@ -1,139 +1,174 @@
-const http = require('http');
-const WebSocket = require('ws');
-const { MongoClient } = require('mongodb');
-const bcrypt = require('bcrypt'); // For password hashing
-const { v4: uuidv4 } = require('uuid'); // For unique room IDs
+const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
+const mongoose = require("mongoose");
+const bodyParser = require("body-parser");
 
-// MongoDB Configuration
-const uri = 'mongodb+srv://Teamjj:Teamjj@streamvibes.opjda.mongodb.net/?retryWrites=true&w=majority&appName=StreamVibes'; // Replace with your MongoDB URI
-const client = new MongoClient(uri);
-const dbName = 'StreamVibes';
-let db;
+// Environment variables for Render
+const PORT = process.env.PORT || 8080;
+const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/websocket-demo";
 
-// Connect to MongoDB
-client.connect()
-    .then(() => {
-        db = client.db(dbName);
-        console.log('Connected to MongoDB');
-    })
-    .catch(err => console.error('Failed to connect to MongoDB:', err));
+// Express app setup
+const app = express();
+app.use(bodyParser.json()); // Middleware to parse JSON bodies
 
-// In-memory room store
-const rooms = {};
+// MongoDB connection
+mongoose
+  .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("Connected to MongoDB"))
+  .catch((error) => console.error("MongoDB connection error:", error));
 
-// Create HTTP server
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Live Video/Audio Streaming Server with User Management');
+// User schema for MongoDB
+const userSchema = new mongoose.Schema({
+  userId: String,       // Unique user identifier
+  role: String,         // "streamer" or "viewer"
+  metadata: Object,     // Additional user metadata
+  connected: { type: Boolean, default: false }, // Connection status
 });
 
-// WebSocket Server
+const User = mongoose.model("User", userSchema);
+
+// Create HTTP server and attach WebSocket server
+const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Handle WebSocket connections
-wss.on('connection', (ws, req) => {
-    let userId;
+// Active WebSocket connections
+const activeUsers = new Map(); // Map of userId -> WebSocket connection
 
-    ws.on('message', async (message) => {
-        const parsedMessage = JSON.parse(message);
+// Function to send JSON data to a WebSocket client
+function sendJSON(client, data) {
+  if (client.readyState === WebSocket.OPEN) {
+    try {
+      client.send(JSON.stringify(data));
+    } catch (error) {
+      console.error("Error sending JSON:", error);
+    }
+  }
+}
 
-        switch (parsedMessage.type) {
-            case 'register': {
-                const { username, password } = parsedMessage;
-                if (!username || !password) {
-                    return ws.send(JSON.stringify({ type: 'error', message: 'Username and password are required' }));
-                }
+// Broadcast messages to users by role
+async function broadcastByRole(role, data) {
+  const users = await User.find({ role, connected: true });
+  users.forEach((user) => {
+    const client = activeUsers.get(user.userId);
+    if (client && client.readyState === WebSocket.OPEN) {
+      sendJSON(client, data);
+    }
+  });
+}
 
-                try {
-                    const hashedPassword = await bcrypt.hash(password, 10);
-                    const user = { username, password: hashedPassword, createdAt: new Date() };
-                    await db.collection('users').insertOne(user);
-                    ws.send(JSON.stringify({ type: 'success', message: 'User registered successfully' }));
-                } catch (err) {
-                    ws.send(JSON.stringify({ type: 'error', message: 'Failed to register user' }));
-                    console.error(err);
-                }
-                break;
-            }
+// WebSocket connection handling
+wss.on("connection", (ws) => {
+  console.log("New WebSocket connection.");
 
-            case 'login': {
-                const { username, password } = parsedMessage;
-                if (!username || !password) {
-                    return ws.send(JSON.stringify({ type: 'error', message: 'Username and password are required' }));
-                }
+  ws.on("message", async (message) => {
+    try {
+      const data = JSON.parse(message);
 
-                try {
-                    const user = await db.collection('users').findOne({ username });
-                    if (!user || !(await bcrypt.compare(password, user.password))) {
-                        return ws.send(JSON.stringify({ type: 'error', message: 'Invalid username or password' }));
-                    }
+      // Register a user
+      if (data.type === "register") {
+        const { userId, role, metadata } = data;
+        const user = await User.findOneAndUpdate(
+          { userId },
+          { role, metadata, connected: true },
+          { upsert: true, new: true }
+        );
+        activeUsers.set(userId, ws);
+        sendJSON(ws, { type: "register-success", user });
+        console.log(`User registered: ${userId} (${role})`);
+      }
 
-                    userId = user._id; // Store the user ID for session tracking
-                    ws.send(JSON.stringify({ type: 'success', message: 'Login successful', userId }));
-                } catch (err) {
-                    ws.send(JSON.stringify({ type: 'error', message: 'Failed to log in' }));
-                    console.error(err);
-                }
-                break;
-            }
-
-            case 'join-room': {
-                const { roomId } = parsedMessage;
-                if (!roomId) {
-                    return ws.send(JSON.stringify({ type: 'error', message: 'Room ID is required' }));
-                }
-
-                if (!rooms[roomId]) {
-                    rooms[roomId] = { streamers: new Set(), viewers: new Set(), messages: [] };
-                }
-
-                const role = parsedMessage.role || 'viewer'; // Default to viewer
-                if (role === 'streamer') {
-                    rooms[roomId].streamers.add(ws);
-                } else {
-                    rooms[roomId].viewers.add(ws);
-                    ws.send(JSON.stringify({ type: 'chat-history', messages: rooms[roomId].messages }));
-                }
-
-                ws.send(JSON.stringify({ type: 'success', message: `Joined room ${roomId}` }));
-                break;
-            }
-
-            case 'comment': {
-                const { roomId, comment } = parsedMessage;
-                if (!roomId || !comment) {
-                    return ws.send(JSON.stringify({ type: 'error', message: 'Room ID and comment are required' }));
-                }
-
-                if (!rooms[roomId]) {
-                    return ws.send(JSON.stringify({ type: 'error', message: 'Room not found' }));
-                }
-
-                rooms[roomId].messages.push({ userId, comment, createdAt: new Date() });
-                rooms[roomId].viewers.forEach(client => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({ type: 'comment', userId, comment }));
-                    }
-                });
-                break;
-            }
+      // Streamer sending data
+      else if (data.type === "streamer-data") {
+        if (data.userId && activeUsers.has(data.userId)) {
+          await broadcastByRole("viewer", { type: "stream-data", payload: data.payload });
+        } else {
+          sendJSON(ws, { type: "error", message: "Unauthorized streamer" });
         }
-    });
+      }
 
-    ws.on('close', () => {
-        // Remove user from all rooms
-        for (const roomId in rooms) {
-            rooms[roomId].streamers.delete(ws);
-            rooms[roomId].viewers.delete(ws);
-            if (rooms[roomId].streamers.size === 0 && rooms[roomId].viewers.size === 0) {
-                delete rooms[roomId]; // Cleanup empty room
-            }
-        }
-    });
+      // Viewer requesting data
+      else if (data.type === "viewer-request") {
+        sendJSON(ws, { type: "viewer-response", message: "Request received" });
+      }
+
+      // Unknown message type
+      else {
+        sendJSON(ws, { type: "error", message: "Unknown message type" });
+      }
+    } catch (error) {
+      console.error("Error processing WebSocket message:", error);
+      sendJSON(ws, { type: "error", message: "Invalid message format" });
+    }
+  });
+
+  ws.on("close", async () => {
+    console.log("WebSocket connection closed.");
+
+    for (const [userId, client] of activeUsers) {
+      if (client === ws) {
+        activeUsers.delete(userId);
+        await User.findOneAndUpdate({ userId }, { connected: false });
+        console.log(`User disconnected: ${userId}`);
+        break;
+      }
+    }
+  });
+
+  ws.on("error", (error) => {
+    console.error("WebSocket error:", error);
+  });
+});
+
+// REST API routes
+app.post("/register", async (req, res) => {
+  const { userId, role, metadata } = req.body;
+  try {
+    const user = await User.findOneAndUpdate(
+      { userId },
+      { role, metadata, connected: false },
+      { upsert: true, new: true }
+    );
+    res.json({ message: "User registered successfully", user });
+  } catch (error) {
+    console.error("Error registering user:", error);
+    res.status(500).json({ error: "Error registering user" });
+  }
+});
+
+app.post("/broadcast", async (req, res) => {
+  const { role, payload } = req.body;
+  try {
+    await broadcastByRole(role, { type: "broadcast", payload });
+    res.json({ message: `Broadcast to ${role} users completed.` });
+  } catch (error) {
+    console.error("Error broadcasting message:", error);
+    res.status(500).json({ error: "Error broadcasting message" });
+  }
+});
+
+app.get("/users", async (req, res) => {
+  try {
+    const users = await User.find();
+    res.json(users);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ error: "Error fetching users" });
+  }
+});
+
+app.delete("/users/:userId", async (req, res) => {
+  const { userId } = req.params;
+  try {
+    await User.findOneAndDelete({ userId });
+    res.json({ message: `User ${userId} deleted.` });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ error: "Error deleting user" });
+  }
 });
 
 // Start server
-const PORT = 8080;
 server.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
