@@ -37,6 +37,32 @@ wss.on('connection', (ws) => {
                     }
                     break;
 
+                // Inside your WebSocket message handler
+case 'offer':
+    // Forward the offer to the viewer
+    const { roomId, offer } = data;
+    rooms[roomId].viewers.forEach(viewer => {
+        viewer.send(JSON.stringify({ type: 'offer', roomId, offer }));
+    });
+    break;
+
+case 'answer':
+    // Forward the answer to the streamer
+    const { answer } = data;
+    rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId, answer }));
+    break;
+
+case 'candidate':
+    // Forward the candidate to the correct peer
+    const { candidate } = data;
+    if (rooms[roomId].streamer) {
+        rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
+    }
+    rooms[roomId].viewers.forEach(viewer => {
+        viewer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
+    });
+    break;
+
                 case 'stream-data':
                     if (rooms[roomId] && rooms[roomId].streamer === ws) {
                         // Broadcast stream data to all viewers
