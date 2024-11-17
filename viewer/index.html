@@ -13,7 +13,7 @@
 <button id="join-room-btn">Join Room</button>
 
 <script>
-    const socket = new WebSocket('wss://final-5sjc.onrender.com');
+    const socket = new WebSocket('https://final-5sjc.onrender.com');
     const roomIdInput = document.getElementById('room-id-input');
     const joinRoomButton = document.getElementById('join-room-btn');
     const viewerVideo = document.getElementById('viewer-video');
@@ -34,16 +34,23 @@
         if (data.type === 'offer') {
             peerConnection = new RTCPeerConnection(configuration);
 
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-            peerConnection.createAnswer().then((answer) => {
-                return peerConnection.setLocalDescription(answer);
-            }).then(() => {
-                socket.send(JSON.stringify({
-                    type: 'answer',
-                    roomId: data.roomId,
-                    answer: peerConnection.localDescription
-                }));
-            });
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+                .then(() => {
+                    return peerConnection.createAnswer();
+                })
+                .then((answer) => {
+                    return peerConnection.setLocalDescription(answer);
+                })
+                .then(() => {
+                    socket.send(JSON.stringify({
+                        type: 'answer',
+                        roomId: data.roomId,
+                        answer: peerConnection.localDescription
+                    }));
+                })
+                .catch((err) => {
+                    console.error('Error handling offer or creating answer:', err);
+                });
 
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
@@ -62,8 +69,20 @@
         }
 
         if (data.type === 'candidate') {
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch((err) => {
+                console.error('Error adding ICE candidate:', err);
+            });
         }
+    };
+
+    // Handle WebSocket errors
+    socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+    };
+
+    // Handle WebSocket close
+    socket.onclose = () => {
+        console.log('WebSocket connection closed');
     };
 
     // Handle joining room
