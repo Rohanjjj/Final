@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #message {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Viewer Dashboard</h1>
+    <p id="status">Connecting to server...</p>
+    <input type="text" id="room-id-input" placeholder="Enter Room ID" />
+    <button id="join-room-btn">Join Room</button>
+
+    <h2>Room ID: <span id="current-room-id">N/A</span></h2>
+
+    <h3>Stream Data:</h3>
+    <textarea id="stream-data" rows="4" cols="50" disabled>Stream data will appear here...</textarea>
+
+    <h3>Send a Comment:</h3>
+    <input type="text" id="comment-input" placeholder="Enter comment" />
+    <button id="send-comment-btn">Send Comment</button>
+
+    <script>
+        const socket = new WebSocket('ws://localhost:3000');
+        const statusElement = document.getElementById('status');
+        const roomIdInput = document.getElementById('room-id-input');
+        const joinRoomButton = document.getElementById('join-room-btn');
+        const currentRoomIdElement = document.getElementById('current-room-id');
+        const streamDataElement = document.getElementById('stream-data');
+        const commentInput = document.getElementById('comment-input');
+        const sendCommentButton = document.getElementById('send-comment-btn');
+
+        let roomId = null;
+
+        // Handle connection
+        socket.onopen = () => {
+            statusElement.textContent = 'Connected to server!';
+        };
+
+        // Handle incoming messages
+        socket.onmessage = (message) => {
+            const data = JSON.parse(message.data);
+
+            if (data.type === 'room-joined' && data.success) {
+                roomId = data.roomId;
+                currentRoomIdElement.textContent = roomId;
+                statusElement.textContent = `Joined room: ${roomId}`;
+            }
+
+            if (data.type === 'stream-data') {
+                streamDataElement.textContent = `Stream Data: ${data.data}`;
+            }
+
+            if (data.type === 'comment') {
+                streamDataElement.textContent = `New Comment: ${data.message}`;
+            }
+        };
+
+        // Handle errors
+        socket.onerror = (error) => {
+            console.error('WebSocket Error:', error);
+            statusElement.textContent = 'Error connecting to the server';
+        };
+
+        // Handle close
+        socket.onclose = () => {
+            statusElement.textContent = 'Connection closed';
+        };
+
+        // Handle joining a room
+        joinRoomButton.onclick = () => {
+            const roomId = roomIdInput.value.trim();
+            if (roomId) {
+                const joinRoomMessage = JSON.stringify({
+                    type: 'join-room',
+                    roomId: roomId
+                });
+                socket.send(joinRoomMessage);
+            }
+        };
+
+        // Handle sending comments
+        sendCommentButton.onclick = () => {
+            const comment = commentInput.value.trim();
+            if (comment && roomId) {
+                const commentMessage = {
+                    type: 'comment',
+                    roomId: roomId,
+                    data: { message: comment }
+                };
+                socket.send(JSON.stringify(commentMessage));
+                commentInput.value = ''; // Clear input after sending
+            }
+        };
+    </script>
+
+</body>
+</html>
