@@ -17,7 +17,7 @@
         },
         {
           "key": "MONGO_URI",
-          "value": "mongodb://your-mongodb-uri:27017" // Replace with your actual MongoDB URI
+          "value": "mongodb://your-mongodb-uri:27017" 
         }
       ],
       "region": "us",
