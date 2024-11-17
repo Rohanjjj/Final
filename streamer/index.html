@@ -3,161 +3,137 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-        }
-        #message {
-            margin-top: 20px;
-        }
-        #video-preview {
-            width: 100%;
-            max-width: 600px;
-            margin-top: 20px;
-            border: 1px solid #ddd;
-        }
-    </style>
+    <title>Streamer</title>
 </head>
 <body>
 
-    <h1>Streamer Dashboard</h1>
-    <p id="status">Connecting to server...</p>
-    <button id="create-room-btn">Create Room</button>
+<h1>Streamer Dashboard</h1>
+<p id="status">Connecting to server...</p>
+<button id="create-room-btn">Create Room</button>
 
-    <h2>Room ID: <span id="room-id">N/A</span></h2>
+<h2>Room ID: <span id="room-id">N/A</span></h2>
 
-    <h3>Stream Data:</h3>
-    <textarea id="stream-data" rows="4" cols="50" disabled>Stream data will appear here...</textarea>
+<video id="stream-video" autoplay></video>
 
-    <h3>Send a Comment:</h3>
-    <input type="text" id="comment-input" placeholder="Enter comment" />
-    <button id="send-comment-btn">Send Comment</button>
+<script>
+    const socket = new WebSocket('ws://final-5sjc.onrender.com');
+    const statusElement = document.getElementById('status');
+    const createRoomButton = document.getElementById('create-room-btn');
+    const roomIdElement = document.getElementById('room-id');
+    const streamVideo = document.getElementById('stream-video');
 
-    <h3>Preview Your Stream:</h3>
-    <video id="video-preview" autoplay muted></video>
+    let roomId = null;
+    let peerConnection;
+    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    <script>
-        const socket = new WebSocket('wss://final-5sjc.onrender.com');
-        const statusElement = document.getElementById('status');
-        const createRoomButton = document.getElementById('create-room-btn');
-        const roomIdElement = document.getElementById('room-id');
-        const streamDataElement = document.getElementById('stream-data');
-        const commentInput = document.getElementById('comment-input');
-        const sendCommentButton = document.getElementById('send-comment-btn');
-        const videoPreview = document.getElementById('video-preview');
+    // Handle connection
+    socket.onopen = () => {
+        statusElement.textContent = 'Connected to server!';
+    };
 
-        let roomId = null;
-        let localStream = null;
-        let peerConnection = null;
+    // Handle incoming messages
+    socket.onmessage = (message) => {
+        const data = JSON.parse(message.data);
 
-        // Handle connection
-        socket.onopen = () => {
-            statusElement.textContent = 'Connected to server!';
-        };
+        if (data.type === 'room-created') {
+            roomId = data.roomId;
+            roomIdElement.textContent = roomId;
+            statusElement.textContent = `Room created with ID: ${roomId}`;
 
-        // Handle incoming messages
-        socket.onmessage = (message) => {
-            const data = JSON.parse(message.data);
+            // Access media devices and start streaming
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then((stream) => {
+                    streamVideo.srcObject = stream;
+                    startStreaming(stream);
+                })
+                .catch((err) => {
+                    console.error('Error accessing media devices:', err);
+                });
+        }
 
-            if (data.type === 'room-created') {
-                roomId = data.roomId;
-                roomIdElement.textContent = roomId;
-                statusElement.textContent = `Room created with ID: ${roomId}`;
+        if (data.type === 'offer') {
+            peerConnection = new RTCPeerConnection(configuration);
 
-                // Send stream data every 2 seconds (simulating video stream)
-                setInterval(() => {
-                    const streamData = {
-                        type: 'stream-data',
+            // Add remote media stream to peer connection
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+            // Add stream to peer connection
+            const stream = streamVideo.srcObject;
+            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+            // Create and send an answer
+            peerConnection.createAnswer()
+                .then((answer) => {
+                    return peerConnection.setLocalDescription(answer);
+                })
+                .then(() => {
+                    socket.send(JSON.stringify({
+                        type: 'answer',
                         roomId: roomId,
-                        data: 'streaming-video-data-here'  // Placeholder for stream data
-                    };
-                    socket.send(JSON.stringify(streamData));
-                    streamDataElement.textContent = 'Sending stream data...';
-                }, 2000);
+                        answer: peerConnection.localDescription
+                    }));
+                });
 
-                // Set up WebRTC after room creation
-                startWebRTC();
-            }
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.send(JSON.stringify({
+                        type: 'candidate',
+                        roomId: roomId,
+                        candidate: event.candidate
+                    }));
+                }
+            };
 
-            if (data.type === 'comment') {
-                streamDataElement.textContent = `New Comment: ${data.message}`;
-            }
-        };
+            // Handle incoming stream from the streamer
+            peerConnection.ontrack = (event) => {
+                const remoteStream = event.streams[0];
+                const viewerVideo = document.getElementById('viewer-video');
+                viewerVideo.srcObject = remoteStream;
+            };
+        }
 
-        // Handle errors
-        socket.onerror = (error) => {
-            console.error('WebSocket Error:', error);
-            statusElement.textContent = 'Error connecting to the server';
-        };
+        if (data.type === 'candidate') {
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+        }
+    };
 
-        // Handle close
-        socket.onclose = () => {
-            statusElement.textContent = 'Connection closed';
-        };
+    // Handle creating a room
+    createRoomButton.onclick = () => {
+        const createRoomMessage = JSON.stringify({ type: 'create-room' });
+        socket.send(createRoomMessage);
+    };
 
-        // Handle creating a room
-        createRoomButton.onclick = () => {
-            const createRoomMessage = JSON.stringify({ type: 'create-room' });
-            socket.send(createRoomMessage);
-        };
+    // Start streaming function
+    function startStreaming(stream) {
+        peerConnection = new RTCPeerConnection(configuration);
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-        // Handle sending comments
-        sendCommentButton.onclick = () => {
-            const comment = commentInput.value.trim();
-            if (comment && roomId) {
-                const commentMessage = {
-                    type: 'comment',
-                    roomId: roomId,
-                    data: { message: comment }
-                };
-                socket.send(JSON.stringify(commentMessage));
-                commentInput.value = ''; // Clear input after sending
-            }
-        };
-
-        // Start WebRTC: Set up the video and audio stream
-        async function startWebRTC() {
-            try {
-                // Get user's media (video and audio)
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-
-                // Show local preview of the stream
-                videoPreview.srcObject = localStream;
-
-                // Set up WebRTC peer connection
-                peerConnection = new RTCPeerConnection();
-
-                // Add local stream tracks to the peer connection
-                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-                // Handle ICE candidates
-                peerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        socket.send(JSON.stringify({
-                            type: 'candidate',
-                            roomId: roomId,
-                            candidate: event.candidate
-                        }));
-                    }
-                };
-
-                // Create an offer to send to viewers
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-
-                // Send the offer to the server
+        // Create offer and send it to viewers
+        peerConnection.createOffer()
+            .then((offer) => {
+                return peerConnection.setLocalDescription(offer);
+            })
+            .then(() => {
                 socket.send(JSON.stringify({
                     type: 'offer',
                     roomId: roomId,
                     offer: peerConnection.localDescription
                 }));
+            });
 
-            } catch (error) {
-                console.error('Error starting WebRTC:', error);
+        // Handle ICE candidates
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.send(JSON.stringify({
+                    type: 'candidate',
+                    roomId: roomId,
+                    candidate: event.candidate
+                }));
             }
-        }
-    </script>
+        };
+    }
+</script>
 
 </body>
 </html>
