@@ -53,13 +53,15 @@
     // Handle incoming messages
     socket.onmessage = (message) => {
         const data = JSON.parse(message.data);
+        console.log("Received message from server:", data);
 
+        // Handle room joining response
         if (data.type === 'room-joined' && data.success) {
             roomId = data.roomId;
             currentRoomIdElement.textContent = roomId;
             statusElement.textContent = `Joined room: ${roomId}`;
 
-            // Set up WebRTC peer connection for receiving stream
+            // Initialize WebRTC peer connection
             peerConnection = new RTCPeerConnection();
 
             // Handle ICE candidates
@@ -73,15 +75,17 @@
                 }
             };
 
-            // Handle receiving the stream and displaying it
+            // Handle incoming tracks (video/audio streams)
             peerConnection.ontrack = (event) => {
                 const remoteStream = event.streams[0];
+                console.log('Received remote stream');
                 viewerVideoElement.srcObject = remoteStream;
             };
         }
 
+        // Handle offer from the streamer
         if (data.type === 'offer' && data.roomId === roomId) {
-            // Handle incoming offer from the streamer
+            console.log('Received offer from streamer');
             peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
                 .then(() => peerConnection.createAnswer())
                 .then(answer => peerConnection.setLocalDescription(answer))
@@ -95,18 +99,19 @@
                 .catch(err => console.error('Error handling offer:', err));
         }
 
+        // Handle ICE candidate from the streamer
         if (data.type === 'candidate' && data.roomId === roomId) {
-            // Handle ICE candidates from the streamer
+            console.log('Received ICE candidate');
             peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
                 .catch(err => console.error('Error adding ICE candidate:', err));
         }
 
+        // Handle stream data and comments
         if (data.type === 'stream-data') {
             console.log('Stream Data:', data.data);
         }
 
         if (data.type === 'comment') {
-            // Display comments in the stream data section
             console.log('New Comment:', data.message);
         }
     };
@@ -129,6 +134,8 @@
                 roomId: roomIdInputValue
             });
             socket.send(joinRoomMessage);
+        } else {
+            statusElement.textContent = 'Please enter a room ID.';
         }
     };
 
