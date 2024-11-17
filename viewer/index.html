@@ -3,66 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer Dashboard</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-        }
-        #viewer-video {
-            width: 100%;
-            max-width: 600px;
-            margin-top: 20px;
-            border: 1px solid #ddd;
-        }
-    </style>
+    <title>Viewer</title>
 </head>
 <body>
 
-<h1>Viewer Dashboard</h1>
-<p id="status">Connecting to server...</p>
+<h1>Viewer Page</h1>
+<video id="viewer-video" autoplay></video>
 <input type="text" id="room-id-input" placeholder="Enter Room ID" />
 <button id="join-room-btn">Join Room</button>
 
-<h2>Room ID: <span id="current-room-id">N/A</span></h2>
-
-<h3>Stream Data:</h3>
-<video id="viewer-video" autoplay></video>
-
-<h3>Send a Comment:</h3>
-<input type="text" id="comment-input" placeholder="Enter comment" />
-<button id="send-comment-btn">Send Comment</button>
-
 <script>
-    const socket = new WebSocket('wss://final-5sjc.onrender.com');
-    const statusElement = document.getElementById('status');
+    const socket = new WebSocket('ws://final-5sjc.onrender.com');
     const roomIdInput = document.getElementById('room-id-input');
     const joinRoomButton = document.getElementById('join-room-btn');
-    const currentRoomIdElement = document.getElementById('current-room-id');
-    const viewerVideoElement = document.getElementById('viewer-video');
-    const commentInput = document.getElementById('comment-input');
-    const sendCommentButton = document.getElementById('send-comment-btn');
-
-    let roomId = null;
+    const viewerVideo = document.getElementById('viewer-video');
     let peerConnection;
+    const roomId = null;
+    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
     // Handle connection
     socket.onopen = () => {
-        statusElement.textContent = 'Connected to server!';
+        console.log('Connected to server');
     };
 
-    // Handle incoming messages
     socket.onmessage = (message) => {
         const data = JSON.parse(message.data);
-        console.log("Received message from server:", data);
 
-        // Handle room joining response
         if (data.type === 'room-joined' && data.success) {
             roomId = data.roomId;
-            currentRoomIdElement.textContent = roomId;
-            statusElement.textContent = `Joined room: ${roomId}`;
+            console.log(`Joined room: ${roomId}`);
+        }
 
-            // Initialize WebRTC peer connection
-            peerConnection = new RTCPeerConnection();
+        if (data.type === 'offer') {
+            peerConnection = new RTCPeerConnection(configuration);
+
+            // Set remote offer
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+            // Create an answer and send it back to the streamer
+            peerConnection.createAnswer()
+                .then((answer) => {
+                    return peerConnection.setLocalDescription(answer);
+                })
+                .then(() => {
+                    socket.send(JSON.stringify({
+                        type: 'answer',
+                        roomId: roomId,
+                        answer: peerConnection.localDescription
+                    }));
+                });
 
             // Handle ICE candidates
             peerConnection.onicecandidate = (event) => {
@@ -75,81 +64,27 @@
                 }
             };
 
-            // Handle incoming tracks (video/audio streams)
+            // Add remote media stream
             peerConnection.ontrack = (event) => {
                 const remoteStream = event.streams[0];
-                console.log('Received remote stream');
-                viewerVideoElement.srcObject = remoteStream;
+                viewerVideo.srcObject = remoteStream;
             };
         }
 
-        // Handle offer from the streamer
-        if (data.type === 'offer' && data.roomId === roomId) {
-            console.log('Received offer from streamer');
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
-                .then(() => peerConnection.createAnswer())
-                .then(answer => peerConnection.setLocalDescription(answer))
-                .then(() => {
-                    socket.send(JSON.stringify({
-                        type: 'answer',
-                        roomId: roomId,
-                        answer: peerConnection.localDescription
-                    }));
-                })
-                .catch(err => console.error('Error handling offer:', err));
-        }
-
-        // Handle ICE candidate from the streamer
-        if (data.type === 'candidate' && data.roomId === roomId) {
-            console.log('Received ICE candidate');
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-                .catch(err => console.error('Error adding ICE candidate:', err));
-        }
-
-        // Handle stream data and comments
-        if (data.type === 'stream-data') {
-            console.log('Stream Data:', data.data);
-        }
-
-        if (data.type === 'comment') {
-            console.log('New Comment:', data.message);
+        if (data.type === 'candidate') {
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
         }
     };
 
-    socket.onerror = (error) => {
-        console.error('WebSocket Error:', error);
-        statusElement.textContent = 'Error connecting to the server';
-    };
-
-    socket.onclose = () => {
-        statusElement.textContent = 'Connection closed';
-    };
-
-    // Handle joining a room
+    // Join room
     joinRoomButton.onclick = () => {
-        const roomIdInputValue = roomIdInput.value.trim();
-        if (roomIdInputValue) {
+        const roomId = roomIdInput.value.trim();
+        if (roomId) {
             const joinRoomMessage = JSON.stringify({
                 type: 'join-room',
-                roomId: roomIdInputValue
+                roomId: roomId
             });
             socket.send(joinRoomMessage);
-        } else {
-            statusElement.textContent = 'Please enter a room ID.';
-        }
-    };
-
-    // Handle sending comments
-    sendCommentButton.onclick = () => {
-        const comment = commentInput.value.trim();
-        if (comment && roomId) {
-            const commentMessage = {
-                type: 'comment',
-                roomId: roomId,
-                data: { message: comment }
-            };
-            socket.send(JSON.stringify(commentMessage));
-            commentInput.value = ''; // Clear input after sending
         }
     };
 </script>
