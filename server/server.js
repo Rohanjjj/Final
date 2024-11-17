@@ -28,7 +28,7 @@ wss.on('connection', (ws) => {
                 case 'join-room':
                     if (rooms[roomId]) {
                         rooms[roomId].viewers.push(ws);
-                        ws.roomId = roomId; // Track the room the viewer joined
+                        ws.roomId = roomId;
                         ws.isStreamer = false;
                         ws.send(JSON.stringify({ type: 'room-joined', success: true }));
                         console.log(`Viewer joined room: ${roomId}`);
@@ -37,52 +37,34 @@ wss.on('connection', (ws) => {
                     }
                     break;
 
-                // Inside your WebSocket message handler
-case 'offer':
-    // Forward the offer to the viewer
-    const { roomId, offer } = data;
-    rooms[roomId].viewers.forEach(viewer => {
-        viewer.send(JSON.stringify({ type: 'offer', roomId, offer }));
-    });
-    break;
-
-case 'answer':
-    // Forward the answer to the streamer
-    const { answer } = data;
-    rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId, answer }));
-    break;
-
-case 'candidate':
-    // Forward the candidate to the correct peer
-    const { candidate } = data;
-    if (rooms[roomId].streamer) {
-        rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
-    }
-    rooms[roomId].viewers.forEach(viewer => {
-        viewer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
-    });
-    break;
-
-                case 'stream-data':
-                    if (rooms[roomId] && rooms[roomId].streamer === ws) {
-                        // Broadcast stream data to all viewers
+                case 'offer':
+                    // Forward offer to all viewers in the room
+                    if (rooms[roomId]) {
                         rooms[roomId].viewers.forEach((viewer) => {
-                            viewer.send(JSON.stringify({ type: 'stream-data', data }));
+                            viewer.send(JSON.stringify({ type: 'offer', roomId: roomId, offer: data }));
                         });
                     }
                     break;
 
-                case 'comment':
+                case 'answer':
+                    // Forward answer from viewer to the streamer
+                    if (rooms[roomId] && rooms[roomId].streamer) {
+                        rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId: roomId, answer: data }));
+                    }
+                    break;
+
+                case 'candidate':
+                    // Forward ICE candidate to the other peer
                     if (rooms[roomId]) {
-                        // Send comments to the streamer and other viewers
-                        const { message } = data;
-                        const commentPacket = JSON.stringify({ type: 'comment', message });
-                        if (rooms[roomId].streamer) {
-                            rooms[roomId].streamer.send(commentPacket);
-                        }
+                        const { candidate } = data;
                         rooms[roomId].viewers.forEach((viewer) => {
-                            if (viewer !== ws) viewer.send(commentPacket); // Avoid echoing to sender
+                            if (viewer !== ws) {
+                                viewer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate: candidate }));
+                            }
                         });
+                        if (rooms[roomId].streamer) {
+                            rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate: candidate }));
+                        }
                     }
                     break;
 
