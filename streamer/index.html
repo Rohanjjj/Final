@@ -3,13 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer</title>
+    <title>Streamer Dashboard</title>
     <style>
         body {
             font-family: Arial, sans-serif;
         }
         #message {
             margin-top: 20px;
+        }
+        #video-preview {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+            border: 1px solid #ddd;
         }
     </style>
 </head>
@@ -28,16 +34,22 @@
     <input type="text" id="comment-input" placeholder="Enter comment" />
     <button id="send-comment-btn">Send Comment</button>
 
+    <h3>Preview Your Stream:</h3>
+    <video id="video-preview" autoplay muted></video>
+
     <script>
-        const socket = new WebSocket('wss://final-5sjc.onrender.com');
+        const socket = new WebSocket('ws://localhost:3000');
         const statusElement = document.getElementById('status');
         const createRoomButton = document.getElementById('create-room-btn');
         const roomIdElement = document.getElementById('room-id');
         const streamDataElement = document.getElementById('stream-data');
         const commentInput = document.getElementById('comment-input');
         const sendCommentButton = document.getElementById('send-comment-btn');
+        const videoPreview = document.getElementById('video-preview');
 
         let roomId = null;
+        let localStream = null;
+        let peerConnection = null;
 
         // Handle connection
         socket.onopen = () => {
@@ -53,16 +65,19 @@
                 roomIdElement.textContent = roomId;
                 statusElement.textContent = `Room created with ID: ${roomId}`;
 
-                // Send stream data every 2 seconds
+                // Send stream data every 2 seconds (simulating video stream)
                 setInterval(() => {
                     const streamData = {
                         type: 'stream-data',
                         roomId: roomId,
-                        data: 'streaming-video-data-here'  // Simulating video stream
+                        data: 'streaming-video-data-here'  // Placeholder for stream data
                     };
                     socket.send(JSON.stringify(streamData));
                     streamDataElement.textContent = 'Sending stream data...';
                 }, 2000);
+
+                // Set up WebRTC after room creation
+                startWebRTC();
             }
 
             if (data.type === 'comment') {
@@ -100,6 +115,48 @@
                 commentInput.value = ''; // Clear input after sending
             }
         };
+
+        // Start WebRTC: Set up the video and audio stream
+        async function startWebRTC() {
+            try {
+                // Get user's media (video and audio)
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+                // Show local preview of the stream
+                videoPreview.srcObject = localStream;
+
+                // Set up WebRTC peer connection
+                peerConnection = new RTCPeerConnection();
+
+                // Add local stream tracks to the peer connection
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+                // Handle ICE candidates
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        socket.send(JSON.stringify({
+                            type: 'candidate',
+                            roomId: roomId,
+                            candidate: event.candidate
+                        }));
+                    }
+                };
+
+                // Create an offer to send to viewers
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+
+                // Send the offer to the server
+                socket.send(JSON.stringify({
+                    type: 'offer',
+                    roomId: roomId,
+                    offer: peerConnection.localDescription
+                }));
+
+            } catch (error) {
+                console.error('Error starting WebRTC:', error);
+            }
+        }
     </script>
 
 </body>
