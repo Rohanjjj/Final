@@ -26,12 +26,10 @@
     let peerConnection;
     const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    // Handle connection
     socket.onopen = () => {
         statusElement.textContent = 'Connected to server!';
     };
 
-    // Handle incoming messages
     socket.onmessage = (message) => {
         const data = JSON.parse(message.data);
 
@@ -48,20 +46,20 @@
                 })
                 .catch((err) => {
                     console.error('Error accessing media devices:', err);
+                    statusElement.textContent = `Error accessing media devices: ${err.message}`;
                 });
         }
 
         if (data.type === 'offer') {
             peerConnection = new RTCPeerConnection(configuration);
 
-            // Add remote media stream to peer connection
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer)).catch((err) => {
+                console.error('Error setting remote description:', err);
+            });
 
-            // Add stream to peer connection
             const stream = streamVideo.srcObject;
             stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-            // Create and send an answer
             peerConnection.createAnswer()
                 .then((answer) => {
                     return peerConnection.setLocalDescription(answer);
@@ -72,9 +70,11 @@
                         roomId: roomId,
                         answer: peerConnection.localDescription
                     }));
+                })
+                .catch((err) => {
+                    console.error('Error creating or setting answer:', err);
                 });
 
-            // Handle ICE candidates
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.send(JSON.stringify({
@@ -85,17 +85,29 @@
                 }
             };
 
-            // Handle incoming stream from the streamer
             peerConnection.ontrack = (event) => {
                 const remoteStream = event.streams[0];
-                const viewerVideo = document.getElementById('viewer-video');
-                viewerVideo.srcObject = remoteStream;
+                streamVideo.srcObject = remoteStream;
             };
         }
 
         if (data.type === 'candidate') {
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch((err) => {
+                console.error('Error adding ICE candidate:', err);
+            });
         }
+    };
+
+    // Handle WebSocket errors
+    socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        statusElement.textContent = `WebSocket error: ${error.message}`;
+    };
+
+    // Handle WebSocket close
+    socket.onclose = () => {
+        console.log('WebSocket connection closed');
+        statusElement.textContent = 'Connection closed';
     };
 
     // Handle creating a room
@@ -109,7 +121,6 @@
         peerConnection = new RTCPeerConnection(configuration);
         stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-        // Create offer and send it to viewers
         peerConnection.createOffer()
             .then((offer) => {
                 return peerConnection.setLocalDescription(offer);
@@ -120,9 +131,11 @@
                     roomId: roomId,
                     offer: peerConnection.localDescription
                 }));
+            })
+            .catch((err) => {
+                console.error('Error creating or sending offer:', err);
             });
 
-        // Handle ICE candidates
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
                 socket.send(JSON.stringify({
