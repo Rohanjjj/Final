@@ -3,60 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer</title>
+    <title>Streamer</title>
 </head>
 <body>
 
-<h1>Viewer Page</h1>
-<video id="viewer-video" autoplay></video>
-<input type="text" id="room-id-input" placeholder="Enter Room ID" />
-<button id="join-room-btn">Join Room</button>
+<h1>Streamer Dashboard</h1>
+<p id="status">Connecting to server...</p>
+<button id="create-room-btn">Create Room</button>
+
+<h2>Room ID: <span id="room-id">N/A</span></h2>
+
+<video id="stream-video" autoplay></video>
 
 <script>
     const socket = new WebSocket('wss://final-5sjc.onrender.com');
-    const roomIdInput = document.getElementById('room-id-input');
-    const joinRoomButton = document.getElementById('join-room-btn');
-    const viewerVideo = document.getElementById('viewer-video');
+    const statusElement = document.getElementById('status');
+    const createRoomButton = document.getElementById('create-room-btn');
+    const roomIdElement = document.getElementById('room-id');
+    const streamVideo = document.getElementById('stream-video');
+
+    let roomId = null;
     let peerConnection;
     const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
     socket.onopen = () => {
-        console.log('Connected to server');
+        statusElement.textContent = 'Connected to server!';
     };
 
     socket.onmessage = (message) => {
         const data = JSON.parse(message.data);
 
-        if (data.type === 'room-joined' && data.success) {
-            console.log('Successfully joined room');
+        if (data.type === 'room-created') {
+            roomId = data.roomId;
+            roomIdElement.textContent = roomId;
+            statusElement.textContent = `Room created with ID: ${roomId}`;
+
+            // Access media devices and start streaming
+            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                .then((stream) => {
+                    streamVideo.srcObject = stream;
+                    startStreaming(stream);
+                })
+                .catch((err) => {
+                    console.error('Error accessing media devices:', err);
+                    statusElement.textContent = `Error accessing media devices: ${err.message}`;
+                });
         }
 
         if (data.type === 'offer') {
             peerConnection = new RTCPeerConnection(configuration);
 
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
-                .then(() => {
-                    return peerConnection.createAnswer();
-                })
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer)).catch((err) => {
+                console.error('Error setting remote description:', err);
+            });
+
+            const stream = streamVideo.srcObject;
+            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+            peerConnection.createAnswer()
                 .then((answer) => {
                     return peerConnection.setLocalDescription(answer);
                 })
                 .then(() => {
                     socket.send(JSON.stringify({
                         type: 'answer',
-                        roomId: data.roomId,
+                        roomId: roomId,
                         answer: peerConnection.localDescription
                     }));
                 })
                 .catch((err) => {
-                    console.error('Error handling offer or creating answer:', err);
+                    console.error('Error creating or setting answer:', err);
                 });
 
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.send(JSON.stringify({
                         type: 'candidate',
-                        roomId: data.roomId,
+                        roomId: roomId,
                         candidate: event.candidate
                     }));
                 }
@@ -64,7 +87,7 @@
 
             peerConnection.ontrack = (event) => {
                 const remoteStream = event.streams[0];
-                viewerVideo.srcObject = remoteStream;
+                streamVideo.srcObject = remoteStream;
             };
         }
 
@@ -78,23 +101,51 @@
     // Handle WebSocket errors
     socket.onerror = (error) => {
         console.error('WebSocket error:', error);
+        statusElement.textContent = `WebSocket error: ${error.message}`;
     };
 
     // Handle WebSocket close
     socket.onclose = () => {
         console.log('WebSocket connection closed');
+        statusElement.textContent = 'Connection closed';
     };
 
-    // Handle joining room
-    joinRoomButton.onclick = () => {
-        const roomId = roomIdInput.value.trim();
-        if (roomId) {
-            socket.send(JSON.stringify({
-                type: 'join-room',
-                roomId: roomId
-            }));
-        }
+    // Handle creating a room
+    createRoomButton.onclick = () => {
+        const createRoomMessage = JSON.stringify({ type: 'create-room' });
+        socket.send(createRoomMessage);
     };
+
+    // Start streaming function
+    function startStreaming(stream) {
+        peerConnection = new RTCPeerConnection(configuration);
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+        peerConnection.createOffer()
+            .then((offer) => {
+                return peerConnection.setLocalDescription(offer);
+            })
+            .then(() => {
+                socket.send(JSON.stringify({
+                    type: 'offer',
+                    roomId: roomId,
+                    offer: peerConnection.localDescription
+                }));
+            })
+            .catch((err) => {
+                console.error('Error creating or sending offer:', err);
+            });
+
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.send(JSON.stringify({
+                    type: 'candidate',
+                    roomId: roomId,
+                    candidate: event.candidate
+                }));
+            }
+        };
+    }
 </script>
 
 </body>
