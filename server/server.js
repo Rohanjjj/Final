@@ -66,6 +66,7 @@ wss.on('connection', (ws) => {
 
   ws.on('message', async (message) => {
     try {
+      // Try to parse the message as JSON
       const data = JSON.parse(message);
       const roomId = data.roomId;
 
@@ -97,48 +98,21 @@ wss.on('connection', (ws) => {
           sendJSON(ws, { type: 'no-stream', message: 'No active stream in this room' });
         } else {
           if (!clients.viewers.has(roomId)) clients.viewers.set(roomId, new Set());
-          const viewers = clients.viewers.get(roomId);
-
-          // Add viewer to the room's viewer set
-          viewers.add(ws);
+          clients.viewers.get(roomId).add(ws);
           console.log(`Viewer connected to room ${roomId}.`);
-
-          // Notify viewer about the active stream
           sendJSON(ws, { type: 'start-stream', roomId });
 
-          // Notify streamer about the new viewer
-          const streamer = clients.streamers.get(roomId);
-          if (streamer && streamer.readyState === WebSocket.OPEN) {
-            sendJSON(streamer, { type: 'viewer-rejoin', message: 'Viewer has joined the stream.' });
-          }
-
-          // Handle viewer disconnection
           ws.on('close', () => {
             console.log(`Viewer disconnected from room ${roomId}.`);
-            viewers.delete(ws);
+            clients.viewers.get(roomId).delete(ws);
           });
         }
 
       } else if (data.type === 'comment') {
         // Handle comments from viewers
         const { viewerId, message } = data;
-        const room = await Room.findOne({ roomId });
-        if (room) {
-          // Save comment in database
-          await Room.updateOne({ roomId }, { $push: { comments: { viewerId, message } } });
-
-          // Broadcast the comment to all viewers in the room
-          const viewers = clients.viewers.get(roomId) || new Set();
-          viewers.forEach((viewer) => {
-            sendJSON(viewer, { type: 'comment', viewerId, message });
-          });
-
-          // Notify streamer about the comment
-          const streamer = clients.streamers.get(roomId);
-          if (streamer && streamer.readyState === WebSocket.OPEN) {
-            sendJSON(streamer, { type: 'comment', viewerId, message });
-          }
-        }
+        await Room.updateOne({ roomId }, { $push: { comments: { viewerId, message } } });
+        sendJSON(clients.streamers.get(roomId), { type: 'comment', viewerId, message });
 
       } else if (['offer', 'answer', 'candidate'].includes(data.type)) {
         // Handle WebRTC signaling
