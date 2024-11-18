@@ -49,12 +49,10 @@ wss.on('connection', (ws) => {
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
+      const roomId = data.roomId;  // Dynamic roomId from the client
 
-      // Handle streamers (screen sharers)
       if (data.type === 'streamer') {
-        const roomId = data.roomId;
-
-        // Check if there's already a streamer for this room
+        // Handle streamer connection
         if (clients.streamers.has(roomId)) {
           const existingStreamer = clients.streamers.get(roomId);
           sendJSON(existingStreamer, { type: 'disconnect', reason: 'New streamer connected' });
@@ -77,9 +75,7 @@ wss.on('connection', (ws) => {
         });
 
       } else if (data.type === 'viewer') {
-        const roomId = data.roomId;
-
-        // Handle viewer connections
+        // Handle viewer connection
         if (!clients.streamers.has(roomId)) {
           sendJSON(ws, { type: 'no-stream', message: 'No active stream in this room' });
         } else {
@@ -105,8 +101,6 @@ wss.on('connection', (ws) => {
         }
       } else if (data.type === 'offer' || data.type === 'answer' || data.type === 'candidate') {
         // Forward WebRTC signaling data (offer, answer, candidate)
-        const roomId = data.roomId;
-
         if (data.type === 'offer' || data.type === 'answer') {
           // Forward the offer/answer to the opposite side
           const target = data.type === 'offer' ? 'answer' : 'offer';
