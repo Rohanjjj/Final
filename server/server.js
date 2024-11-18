@@ -19,7 +19,7 @@ wss.on('connection', (ws) => {
                 case 'create-room':
                     const newRoomId = uuidv4();
                     rooms[newRoomId] = { streamer: ws, viewers: [] };
-                    ws.roomId = newRoomId; // Track the room the streamer owns
+                    ws.roomId = newRoomId;
                     ws.isStreamer = true;
                     ws.send(JSON.stringify({ type: 'room-created', roomId: newRoomId }));
                     console.log(`Room created: ${newRoomId}`);
@@ -31,6 +31,7 @@ wss.on('connection', (ws) => {
                         ws.roomId = roomId;
                         ws.isStreamer = false;
                         ws.send(JSON.stringify({ type: 'room-joined', success: true }));
+                        rooms[roomId].streamer.send(JSON.stringify({ type: 'viewer-joined', roomId }));
                         console.log(`Viewer joined room: ${roomId}`);
                     } else {
                         ws.send(JSON.stringify({ type: 'room-joined', success: false, message: 'Room not found' }));
@@ -38,32 +39,28 @@ wss.on('connection', (ws) => {
                     break;
 
                 case 'offer':
-                    // Forward offer to all viewers in the room
                     if (rooms[roomId]) {
                         rooms[roomId].viewers.forEach((viewer) => {
-                            viewer.send(JSON.stringify({ type: 'offer', roomId: roomId, offer: data }));
+                            viewer.send(JSON.stringify({ type: 'offer', roomId, offer: data }));
                         });
                     }
                     break;
 
                 case 'answer':
-                    // Forward answer from viewer to the streamer
                     if (rooms[roomId] && rooms[roomId].streamer) {
-                        rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId: roomId, answer: data }));
+                        rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId, answer: data }));
                     }
                     break;
 
                 case 'candidate':
-                    // Forward ICE candidate to the other peer
                     if (rooms[roomId]) {
                         const { candidate } = data;
-                        rooms[roomId].viewers.forEach((viewer) => {
-                            if (viewer !== ws) {
-                                viewer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate: candidate }));
-                            }
-                        });
-                        if (rooms[roomId].streamer) {
-                            rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate: candidate }));
+                        if (ws.isStreamer) {
+                            rooms[roomId].viewers.forEach((viewer) => {
+                                viewer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
+                            });
+                        } else {
+                            rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
                         }
                     }
                     break;
@@ -79,7 +76,6 @@ wss.on('connection', (ws) => {
     ws.on('close', () => {
         const roomId = ws.roomId;
         if (ws.isStreamer) {
-            // Remove the room if the streamer disconnects
             if (rooms[roomId]) {
                 rooms[roomId].viewers.forEach((viewer) => {
                     viewer.send(JSON.stringify({ type: 'room-closed', message: 'Streamer has disconnected.' }));
@@ -88,7 +84,6 @@ wss.on('connection', (ws) => {
                 console.log(`Room ${roomId} closed`);
             }
         } else if (roomId && rooms[roomId]) {
-            // Remove the viewer from the room
             rooms[roomId].viewers = rooms[roomId].viewers.filter((viewer) => viewer !== ws);
             console.log(`Viewer disconnected from room: ${roomId}`);
         }
