@@ -1,110 +1,134 @@
 const express = require('express');
-const http = require('http');
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 
-// Initialize Express app and HTTP server
+// Initialize the express application
 const app = express();
-const server = http.createServer(app);
+const server = app.listen(process.env.PORT || 3000, () => {
+    console.log(`Server running on port ${process.env.PORT || 3000}`);
+});
 
-// Attach WebSocket server to the HTTP server
+// Set up WebSocket server
 const wss = new WebSocket.Server({ server });
 
-const rooms = {}; // { roomId: { streamer: ws, viewers: [] } }
+// Store rooms and connected clients
+const rooms = {};
 
-// WebSocket Server Logic
+// Handle WebSocket connections
 wss.on('connection', (ws) => {
     console.log('A client connected');
 
+    // Handle incoming messages from clients
     ws.on('message', (message) => {
+        console.log('Message received:', message);
+
         try {
-            const parsed = JSON.parse(message);
-            const { type, roomId, data } = parsed;
+            const data = JSON.parse(message);
 
-            switch (type) {
-                case 'create-room':
-                    const newRoomId = uuidv4();
-                    rooms[newRoomId] = { streamer: ws, viewers: [] };
-                    ws.roomId = newRoomId;
-                    ws.isStreamer = true;
-                    ws.send(JSON.stringify({ type: 'room-created', roomId: newRoomId }));
-                    console.log(`Room created: ${newRoomId}`);
-                    break;
+            // Handle case when 'candidate' is part of the message
+            if (data.candidate) {
+                const { candidate } = data;
 
-                case 'join-room':
-                    if (rooms[roomId]) {
-                        rooms[roomId].viewers.push(ws);
-                        ws.roomId = roomId;
-                        ws.isStreamer = false;
-                        ws.send(JSON.stringify({ type: 'room-joined', success: true }));
-                        console.log(`Viewer joined room: ${roomId}`);
-                    } else {
-                        ws.send(JSON.stringify({ type: 'room-joined', success: false, message: 'Room not found' }));
-                    }
-                    break;
-
-                case 'offer':
-                    if (rooms[roomId]) {
-                        rooms[roomId].viewers.forEach((viewer) => {
-                            viewer.send(JSON.stringify({ type: 'offer', roomId: roomId, offer: data }));
-                        });
-                    }
-                    break;
-
-                case 'answer':
-                    if (rooms[roomId] && rooms[roomId].streamer) {
-                        rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId: roomId, answer: data }));
-                    }
-                    break;
-
-                case 'candidate':
-                    const { candidate } = data;
-                    if (rooms[roomId]) {
-                        rooms[roomId].viewers.forEach((viewer) => {
-                            if (viewer !== ws) {
-                                viewer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate }));
-                            }
-                        });
-                        if (rooms[roomId].streamer) {
-                            rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate }));
+                // Ensure that the room exists
+                if (data.roomId && rooms[data.roomId]) {
+                    const roomClients = rooms[data.roomId];
+                    roomClients.forEach(client => {
+                        if (client !== ws && client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({ candidate }));
                         }
-                    }
-                    break;
-
-                default:
-                    console.log('Unknown message type:', type);
+                    });
+                }
+            } else if (data.roomId) {
+                // Handle room creation
+                if (!rooms[data.roomId]) {
+                    rooms[data.roomId] = [];
+                    console.log(`Room created: ${data.roomId}`);
+                }
+                rooms[data.roomId].push(ws);
+                ws.send(JSON.stringify({ message: `Joined room ${data.roomId}` }));
             }
         } catch (error) {
             console.error('Error parsing message:', error);
         }
     });
 
+    // Handle client disconnections
     ws.on('close', () => {
-        const roomId = ws.roomId;
-        if (ws.isStreamer) {
-            if (rooms[roomId]) {
-                rooms[roomId].viewers.forEach((viewer) => {
-                    viewer.send(JSON.stringify({ type: 'room-closed', message: 'Streamer has disconnected.' }));
-                });
-                delete rooms[roomId];
-                console.log(`Room ${roomId} closed`);
+        console.log('A client disconnected');
+        Object.keys(rooms).forEach((roomId) => {
+            const roomClients = rooms[roomId];
+            const index = roomClients.indexOf(ws);
+            if (index !== -1) {
+                roomClients.splice(index, 1);
+                console.log(`Client removed from room: ${roomId}`);
             }
-        } else if (roomId && rooms[roomId]) {
-            rooms[roomId].viewers = rooms[roomId].viewers.filter((viewer) => viewer !== ws);
-            console.log(`Viewer disconnected from room: ${roomId}`);
-        }
+        });
     });
 });
+const express = require('express');
+const WebSocket = require('ws');
+const { v4: uuidv4 } = require('uuid');
 
-// Express Routes
-app.get('/', (req, res) => {
-    res.send('WebSocket Server is running!');
+// Initialize the express application
+const app = express();
+const server = app.listen(process.env.PORT || 3000, () => {
+    console.log(`Server running on port ${process.env.PORT || 3000}`);
 });
 
-// Server Port
-const PORT = process.env.PORT || 3000;
+// Set up WebSocket server
+const wss = new WebSocket.Server({ server });
 
-// Start the HTTP server
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+// Store rooms and connected clients
+const rooms = {};
+
+// Handle WebSocket connections
+wss.on('connection', (ws) => {
+    console.log('A client connected');
+
+    // Handle incoming messages from clients
+    ws.on('message', (message) => {
+        console.log('Message received:', message);
+
+        try {
+            const data = JSON.parse(message);
+
+            // Handle case when 'candidate' is part of the message
+            if (data.candidate) {
+                const { candidate } = data;
+
+                // Ensure that the room exists
+                if (data.roomId && rooms[data.roomId]) {
+                    const roomClients = rooms[data.roomId];
+                    roomClients.forEach(client => {
+                        if (client !== ws && client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({ candidate }));
+                        }
+                    });
+                }
+            } else if (data.roomId) {
+                // Handle room creation
+                if (!rooms[data.roomId]) {
+                    rooms[data.roomId] = [];
+                    console.log(`Room created: ${data.roomId}`);
+                }
+                rooms[data.roomId].push(ws);
+                ws.send(JSON.stringify({ message: `Joined room ${data.roomId}` }));
+            }
+        } catch (error) {
+            console.error('Error parsing message:', error);
+        }
+    });
+
+    // Handle client disconnections
+    ws.on('close', () => {
+        console.log('A client disconnected');
+        Object.keys(rooms).forEach((roomId) => {
+            const roomClients = rooms[roomId];
+            const index = roomClients.indexOf(ws);
+            if (index !== -1) {
+                roomClients.splice(index, 1);
+                console.log(`Client removed from room: ${roomId}`);
+            }
+        });
+    });
 });
