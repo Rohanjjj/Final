@@ -1,23 +1,16 @@
 const WebSocket = require('ws');
-const express = require('express');
-const cors = require('cors');
 const http = require('http');
+const cors = require('cors');
+const express = require('express');
 
-// Create an Express application
+// Initialize express app
 const app = express();
-
-// Enable CORS support
-app.use(cors()); // Allows all origins by default, you can customize this
-
-// Use Express to serve static files or handle other routes if needed
-app.get('/', (req, res) => {
-  res.send('WebSocket server is running with Express!');
-});
-
-// Create an HTTP server using Express
 const server = http.createServer(app);
 
-// Create a WebSocket server that listens on the same HTTP server
+// Enable CORS for the express server
+app.use(cors());
+
+// WebSocket server
 const wss = new WebSocket.Server({ server });
 
 const clients = {
@@ -55,15 +48,15 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (message) => {
     try {
-      // Handle JSON messages
       const data = JSON.parse(message);
 
+      // Handle streamers (screen sharers)
       if (data.type === 'streamer') {
-        // Handle streamer connection
         const roomId = data.roomId;
+
+        // Check if there's already a streamer for this room
         if (clients.streamers.has(roomId)) {
           const existingStreamer = clients.streamers.get(roomId);
-          // Notify viewers that a new streamer is connecting
           sendJSON(existingStreamer, { type: 'disconnect', reason: 'New streamer connected' });
           existingStreamer.close();
         }
@@ -76,7 +69,6 @@ wss.on('connection', (ws) => {
         ws.on('close', () => {
           console.log(`Streamer disconnected from room ${roomId}.`);
           clients.streamers.delete(roomId);
-          // Notify all viewers that the stream has ended
           broadcastToViewers(roomId, JSON.stringify({ type: 'end-stream' }));
         });
 
@@ -85,8 +77,9 @@ wss.on('connection', (ws) => {
         });
 
       } else if (data.type === 'viewer') {
-        // Handle viewer connection
         const roomId = data.roomId;
+
+        // Handle viewer connections
         if (!clients.streamers.has(roomId)) {
           sendJSON(ws, { type: 'no-stream', message: 'No active stream in this room' });
         } else {
@@ -100,7 +93,6 @@ wss.on('connection', (ws) => {
           // Send active stream data to the viewer
           sendJSON(ws, { type: 'start-stream', roomId: roomId });
 
-          // Viewer disconnection handling
           ws.on('close', () => {
             console.log(`Viewer disconnected from room ${roomId}.`);
             clients.viewers.get(roomId).delete(ws);
@@ -111,19 +103,25 @@ wss.on('connection', (ws) => {
             clients.viewers.get(roomId).delete(ws); // Clean up if there’s an error
           });
         }
+      } else if (data.type === 'offer' || data.type === 'answer' || data.type === 'candidate') {
+        // Forward WebRTC signaling data (offer, answer, candidate)
+        const roomId = data.roomId;
+
+        if (data.type === 'offer' || data.type === 'answer') {
+          // Forward the offer/answer to the opposite side
+          const target = data.type === 'offer' ? 'answer' : 'offer';
+          broadcastToViewers(roomId, { type: target, sdp: data.sdp });
+        } else if (data.type === 'candidate') {
+          // Forward ICE candidates to viewers
+          broadcastToViewers(roomId, { type: 'candidate', candidate: data.candidate });
+        }
       } else {
         console.error('Unknown client type:', data.type);
         sendJSON(ws, { type: 'error', message: 'Unknown client type' });
       }
     } catch (e) {
-      // Handle binary data from the streamer
-      if (ws === clients.streamers.get(data.roomId)) {
-        // Relay binary data to all viewers in the room
-        broadcastToViewers(data.roomId, message);
-      } else {
-        console.error('Invalid JSON message received:', e);
-        sendJSON(ws, { type: 'error', message: 'Invalid data format' });
-      }
+      console.error('Error processing message:', e);
+      sendJSON(ws, { type: 'error', message: 'Invalid data format' });
     }
   });
 
@@ -136,7 +134,7 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Start the HTTP server and WebSocket server
+// Start the HTTP server
 server.listen(8080, () => {
-  console.log('WebSocket server running on ws://localhost:8080');
+  console.log('WebSocket server running on wss://final-5sjc.onrender.com');
 });
