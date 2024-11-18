@@ -1,12 +1,18 @@
+const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 
-const server = http.createServer();
+// Initialize Express app and HTTP server
+const app = express();
+const server = http.createServer(app);
+
+// Attach WebSocket server to the HTTP server
 const wss = new WebSocket.Server({ server });
 
 const rooms = {}; // { roomId: { streamer: ws, viewers: [] } }
 
+// WebSocket Server Logic
 wss.on('connection', (ws) => {
     console.log('A client connected');
 
@@ -31,7 +37,6 @@ wss.on('connection', (ws) => {
                         ws.roomId = roomId;
                         ws.isStreamer = false;
                         ws.send(JSON.stringify({ type: 'room-joined', success: true }));
-                        rooms[roomId].streamer.send(JSON.stringify({ type: 'viewer-joined', roomId }));
                         console.log(`Viewer joined room: ${roomId}`);
                     } else {
                         ws.send(JSON.stringify({ type: 'room-joined', success: false, message: 'Room not found' }));
@@ -41,26 +46,27 @@ wss.on('connection', (ws) => {
                 case 'offer':
                     if (rooms[roomId]) {
                         rooms[roomId].viewers.forEach((viewer) => {
-                            viewer.send(JSON.stringify({ type: 'offer', roomId, offer: data }));
+                            viewer.send(JSON.stringify({ type: 'offer', roomId: roomId, offer: data }));
                         });
                     }
                     break;
 
                 case 'answer':
                     if (rooms[roomId] && rooms[roomId].streamer) {
-                        rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId, answer: data }));
+                        rooms[roomId].streamer.send(JSON.stringify({ type: 'answer', roomId: roomId, answer: data }));
                     }
                     break;
 
                 case 'candidate':
+                    const { candidate } = data;
                     if (rooms[roomId]) {
-                        const { candidate } = data;
-                        if (ws.isStreamer) {
-                            rooms[roomId].viewers.forEach((viewer) => {
-                                viewer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
-                            });
-                        } else {
-                            rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId, candidate }));
+                        rooms[roomId].viewers.forEach((viewer) => {
+                            if (viewer !== ws) {
+                                viewer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate }));
+                            }
+                        });
+                        if (rooms[roomId].streamer) {
+                            rooms[roomId].streamer.send(JSON.stringify({ type: 'candidate', roomId: roomId, candidate }));
                         }
                     }
                     break;
@@ -90,8 +96,15 @@ wss.on('connection', (ws) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+// Express Routes
+app.get('/', (req, res) => {
+    res.send('WebSocket Server is running!');
 });
 
+// Server Port
+const PORT = process.env.PORT || 3000;
+
+// Start the HTTP server
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+});
