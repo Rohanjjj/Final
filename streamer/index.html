@@ -12,8 +12,7 @@
 <button id="create-room-btn">Create Room</button>
 
 <h2>Room ID: <span id="room-id">N/A</span></h2>
-
-<video id="stream-video" autoplay></video>
+<video id="stream-video" autoplay muted></video>
 
 <script>
     const socket = new WebSocket('wss://final-5sjc.onrender.com');
@@ -24,7 +23,12 @@
 
     let roomId = null;
     let peerConnection;
-    const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+    const configuration = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'turn:your-turn-server.com', username: 'user', credential: 'pass' }
+        ]
+    };
 
     socket.onopen = () => {
         statusElement.textContent = 'Connected to server!';
@@ -37,104 +41,38 @@
             roomId = data.roomId;
             roomIdElement.textContent = roomId;
             statusElement.textContent = `Room created with ID: ${roomId}`;
-
-            // Access media devices and start streaming
-            navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-                .then((stream) => {
-                    streamVideo.srcObject = stream;
-                    startStreaming(stream);
-                })
-                .catch((err) => {
-                    console.error('Error accessing media devices:', err);
-                    statusElement.textContent = `Error accessing media devices: ${err.message}`;
-                });
+            startStreaming();
         }
 
-        if (data.type === 'offer') {
-            peerConnection = new RTCPeerConnection(configuration);
-
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer)).catch((err) => {
-                console.error('Error setting remote description:', err);
-            });
-
-            const stream = streamVideo.srcObject;
-            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-
-            peerConnection.createAnswer()
-                .then((answer) => {
-                    return peerConnection.setLocalDescription(answer);
-                })
-                .then(() => {
-                    socket.send(JSON.stringify({
-                        type: 'answer',
-                        roomId: roomId,
-                        answer: peerConnection.localDescription
-                    }));
-                })
-                .catch((err) => {
-                    console.error('Error creating or setting answer:', err);
-                });
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.send(JSON.stringify({
-                        type: 'candidate',
-                        roomId: roomId,
-                        candidate: event.candidate
-                    }));
-                }
-            };
-
-            peerConnection.ontrack = (event) => {
-                const remoteStream = event.streams[0];
-                streamVideo.srcObject = remoteStream;
-            };
+        if (data.type === 'answer') {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer)).catch(console.error);
         }
 
         if (data.type === 'candidate') {
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch((err) => {
-                console.error('Error adding ICE candidate:', err);
-            });
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(console.error);
         }
     };
 
-    // Handle WebSocket errors
-    socket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        statusElement.textContent = `WebSocket error: ${error.message}`;
-    };
-
-    // Handle WebSocket close
-    socket.onclose = () => {
-        console.log('WebSocket connection closed');
-        statusElement.textContent = 'Connection closed';
-    };
-
-    // Handle creating a room
     createRoomButton.onclick = () => {
         const createRoomMessage = JSON.stringify({ type: 'create-room' });
         socket.send(createRoomMessage);
     };
 
-    // Start streaming function
-    function startStreaming(stream) {
+    async function startStreaming() {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        streamVideo.srcObject = stream;
+
         peerConnection = new RTCPeerConnection(configuration);
         stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
 
-        peerConnection.createOffer()
-            .then((offer) => {
-                return peerConnection.setLocalDescription(offer);
-            })
-            .then(() => {
-                socket.send(JSON.stringify({
-                    type: 'offer',
-                    roomId: roomId,
-                    offer: peerConnection.localDescription
-                }));
-            })
-            .catch((err) => {
-                console.error('Error creating or sending offer:', err);
-            });
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        socket.send(JSON.stringify({
+            type: 'offer',
+            roomId: roomId,
+            offer: peerConnection.localDescription
+        }));
 
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
