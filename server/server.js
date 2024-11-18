@@ -55,7 +55,7 @@ function broadcastBinaryToViewers(roomId, binaryData) {
   const viewers = clients.viewers.get(roomId) || new Set();
   viewers.forEach((viewer) => {
     if (viewer.readyState === WebSocket.OPEN) {
-      viewer.send(binaryData); // Forward binary data
+      viewer.send(binaryData); // Forward binary data (video/audio/screen)
     }
   });
 }
