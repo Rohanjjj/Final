@@ -98,13 +98,25 @@ wss.on('connection', (ws) => {
           sendJSON(ws, { type: 'no-stream', message: 'No active stream in this room' });
         } else {
           if (!clients.viewers.has(roomId)) clients.viewers.set(roomId, new Set());
-          clients.viewers.get(roomId).add(ws);
+          const viewers = clients.viewers.get(roomId);
+
+          // Add viewer to the room's viewer set
+          viewers.add(ws);
           console.log(`Viewer connected to room ${roomId}.`);
+
+          // Notify viewer about the active stream
           sendJSON(ws, { type: 'start-stream', roomId });
 
+          // Notify streamer about the new viewer
+          const streamer = clients.streamers.get(roomId);
+          if (streamer && streamer.readyState === WebSocket.OPEN) {
+            sendJSON(streamer, { type: 'viewer-rejoin', message: 'Viewer has joined the stream.' });
+          }
+
+          // Handle viewer disconnection
           ws.on('close', () => {
             console.log(`Viewer disconnected from room ${roomId}.`);
-            clients.viewers.get(roomId).delete(ws);
+            viewers.delete(ws);
           });
         }
 
