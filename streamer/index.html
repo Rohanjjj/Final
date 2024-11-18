@@ -1,90 +1,98 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Streamer</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Streamer</title>
+  <style>
+    #stream {
+      width: 100%;
+      max-width: 800px;
+      height: auto;
+      border: 2px solid black;
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
+  <h1>Streamer: Screen Sharing</h1>
+  <label for="roomId">Enter Room ID to Stream:</label>
+  <input type="text" id="roomId" placeholder="Room ID">
+  <button onclick="startStreaming()">Start Streaming</button>
+  
+  <video id="stream" autoplay muted></video>
 
-<h1>Streamer Dashboard</h1>
-<p id="status">Connecting to server...</p>
-<button id="create-room-btn">Create Room</button>
-
-<h2>Room ID: <span id="room-id">N/A</span></h2>
-<video id="stream-video" autoplay muted></video>
-
-<script>
-    const socket = new WebSocket('wss://final-5sjc.onrender.com');
-    const statusElement = document.getElementById('status');
-    const createRoomButton = document.getElementById('create-room-btn');
-    const roomIdElement = document.getElementById('room-id');
-    const streamVideo = document.getElementById('stream-video');
-
-    let roomId = null;
+  <script>
+    let ws;
     let peerConnection;
-    const configuration = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'turn:your-turn-server.com', username: 'user', credential: 'pass' }
-        ]
-    };
 
-    socket.onopen = () => {
-        statusElement.textContent = 'Connected to server!';
-    };
+    // Function to start streaming
+    function startStreaming() {
+      const roomId = document.getElementById('roomId').value.trim();
+      if (!roomId) {
+        alert('Please enter a room ID.');
+        return;
+      }
 
-    socket.onmessage = (message) => {
-        const data = JSON.parse(message.data);
+      // Create WebSocket connection
+      ws = new WebSocket('wss://final-5sjc.onrender.com');
+      ws.onopen = () => {
+        console.log('Connected to WebSocket server');
 
-        if (data.type === 'room-created') {
-            roomId = data.roomId;
-            roomIdElement.textContent = roomId;
-            statusElement.textContent = `Room created with ID: ${roomId}`;
-            startStreaming();
-        }
-
-        if (data.type === 'answer') {
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer)).catch(console.error);
-        }
-
-        if (data.type === 'candidate') {
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(console.error);
-        }
-    };
-
-    createRoomButton.onclick = () => {
-        const createRoomMessage = JSON.stringify({ type: 'create-room' });
-        socket.send(createRoomMessage);
-    };
-
-    async function startStreaming() {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        streamVideo.srcObject = stream;
-
-        peerConnection = new RTCPeerConnection(configuration);
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-
-        socket.send(JSON.stringify({
-            type: 'offer',
-            roomId: roomId,
-            offer: peerConnection.localDescription
+        // Send stream details and room ID
+        ws.send(JSON.stringify({
+          type: 'streamer',
+          roomId: roomId
         }));
 
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                socket.send(JSON.stringify({
-                    type: 'candidate',
-                    roomId: roomId,
-                    candidate: event.candidate
-                }));
-            }
-        };
-    }
-</script>
+        // Get user media for screen sharing (both video and audio)
+        navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+          .then((stream) => {
+            const videoElement = document.getElementById('stream');
+            videoElement.srcObject = stream;
 
+            // Initialize WebRTC peer connection
+            peerConnection = new RTCPeerConnection();
+
+            // Add stream tracks to peer connection
+            stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+              if (event.candidate) {
+                ws.send(JSON.stringify({
+                  type: 'candidate',
+                  roomId: roomId,
+                  candidate: event.candidate
+                }));
+              }
+            };
+
+            // Create an offer
+            peerConnection.createOffer()
+              .then(offer => peerConnection.setLocalDescription(offer))
+              .then(() => {
+                ws.send(JSON.stringify({
+                  type: 'offer',
+                  roomId: roomId,
+                  sdp: peerConnection.localDescription
+                }));
+              });
+          })
+          .catch((err) => {
+            console.error('Error accessing screen share:', err);
+          });
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'answer') {
+          peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+        } else if (message.type === 'candidate') {
+          peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+        }
+      };
+    }
+  </script>
 </body>
 </html>
