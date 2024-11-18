@@ -66,7 +66,6 @@ wss.on('connection', (ws) => {
 
   ws.on('message', async (message) => {
     try {
-      // Try to parse the message as JSON
       const data = JSON.parse(message);
       const roomId = data.roomId;
 
@@ -123,8 +122,23 @@ wss.on('connection', (ws) => {
       } else if (data.type === 'comment') {
         // Handle comments from viewers
         const { viewerId, message } = data;
-        await Room.updateOne({ roomId }, { $push: { comments: { viewerId, message } } });
-        sendJSON(clients.streamers.get(roomId), { type: 'comment', viewerId, message });
+        const room = await Room.findOne({ roomId });
+        if (room) {
+          // Save comment in database
+          await Room.updateOne({ roomId }, { $push: { comments: { viewerId, message } } });
+
+          // Broadcast the comment to all viewers in the room
+          const viewers = clients.viewers.get(roomId) || new Set();
+          viewers.forEach((viewer) => {
+            sendJSON(viewer, { type: 'comment', viewerId, message });
+          });
+
+          // Notify streamer about the comment
+          const streamer = clients.streamers.get(roomId);
+          if (streamer && streamer.readyState === WebSocket.OPEN) {
+            sendJSON(streamer, { type: 'comment', viewerId, message });
+          }
+        }
 
       } else if (['offer', 'answer', 'candidate'].includes(data.type)) {
         // Handle WebRTC signaling
