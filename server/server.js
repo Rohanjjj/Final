@@ -64,6 +64,17 @@ function broadcastBinaryToViewers(roomId, binaryData) {
 wss.on('connection', (ws) => {
   console.log('New client connected.');
 
+  // Implement Ping/Pong to keep connection alive
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.ping();
+    }
+  }, 30000); // Ping every 30 seconds
+
+  ws.on('pong', () => {
+    // Handle pong response (client is alive)
+  });
+
   ws.on('message', async (message) => {
     try {
       const data = JSON.parse(message);
@@ -89,6 +100,7 @@ wss.on('connection', (ws) => {
           console.log(`Streamer disconnected from room ${roomId}.`);
           clients.streamers.delete(roomId);
           broadcastBinaryToViewers(roomId, JSON.stringify({ type: 'end-stream' }));
+          clearInterval(pingInterval); // Clear ping interval when streamer disconnects
         });
 
       } else if (data.type === 'viewer') {
@@ -110,6 +122,7 @@ wss.on('connection', (ws) => {
           ws.on('close', () => {
             console.log(`Viewer disconnected from room ${roomId}.`);
             clients.viewers.get(roomId).delete(ws);
+            clearInterval(pingInterval); // Clear ping interval when viewer disconnects
           });
         }
 
@@ -152,10 +165,12 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     console.log('Client disconnected.');
+    clearInterval(pingInterval); // Clear ping interval when client disconnects
   });
 
   ws.on('error', (error) => {
     console.error('WebSocket error:', error);
+    clearInterval(pingInterval); // Clear ping interval on error
   });
 });
 
