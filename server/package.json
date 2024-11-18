@@ -1,20 +1,13 @@
 {
   "name": "streamer-app",
   "version": "1.0.0",
-  "description": "A simple WebSocket-based streamer app where users can create rooms, stream data, and comment in real-time.",
-  "main": "index.js",
+  "description": "A WebRTC-based streaming app using WebSockets.",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "uuid": "^9.0.0",
-    "ws": "^8.8.0"
-  },
-  "devDependencies": {
-    "nodemon": "^2.0.22"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "ws": "^8.13.0"
   }
 }
