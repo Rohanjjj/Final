@@ -66,7 +66,6 @@ wss.on('connection', (ws) => {
 
   ws.on('message', async (message) => {
     try {
-      // Try to parse the message as JSON
       const data = JSON.parse(message);
       const roomId = data.roomId;
 
@@ -99,7 +98,13 @@ wss.on('connection', (ws) => {
         } else {
           if (!clients.viewers.has(roomId)) clients.viewers.set(roomId, new Set());
           clients.viewers.get(roomId).add(ws);
+
           console.log(`Viewer connected to room ${roomId}.`);
+
+          // Send historical comments to the viewer
+          const room = await Room.findOne({ roomId });
+          if (room) sendJSON(ws, { type: 'comments', comments: room.comments });
+
           sendJSON(ws, { type: 'start-stream', roomId });
 
           ws.on('close', () => {
@@ -112,18 +117,22 @@ wss.on('connection', (ws) => {
         // Handle comments from viewers
         const { viewerId, message } = data;
         await Room.updateOne({ roomId }, { $push: { comments: { viewerId, message } } });
-        sendJSON(clients.streamers.get(roomId), { type: 'comment', viewerId, message });
+
+        // Notify streamer and all viewers
+        const streamer = clients.streamers.get(roomId);
+        if (streamer) sendJSON(streamer, { type: 'comment', viewerId, message });
+
+        const viewers = clients.viewers.get(roomId) || new Set();
+        viewers.forEach((viewer) => sendJSON(viewer, { type: 'comment', viewerId, message }));
 
       } else if (['offer', 'answer', 'candidate'].includes(data.type)) {
         // Handle WebRTC signaling
         if (data.target === 'streamer') {
-          // Forward signaling data to the streamer
           const streamer = clients.streamers.get(roomId);
           if (streamer) {
             sendJSON(streamer, data);
           }
         } else {
-          // Broadcast signaling data to viewers
           broadcastBinaryToViewers(roomId, data);
         }
 
@@ -132,10 +141,9 @@ wss.on('connection', (ws) => {
         sendJSON(ws, { type: 'error', message: 'Unknown message type' });
       }
     } catch (error) {
-      // If message is not JSON, treat it as binary data
       const roomId = Array.from(clients.streamers.keys()).find((key) => clients.streamers.get(key) === ws);
       if (roomId) {
-        broadcastBinaryToViewers(roomId, message); // Relay binary data (e.g., video/audio/screen)
+        broadcastBinaryToViewers(roomId, message);
       } else {
         console.error('Received binary data from unknown streamer.');
       }
