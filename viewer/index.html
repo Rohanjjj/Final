@@ -1,81 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Viewer</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Viewer</title>
+  <style>
+    #video {
+      width: 100%;
+      max-width: 800px;
+      height: auto;
+      border: 2px solid black;
+      margin-top: 20px;
+    }
+  </style>
 </head>
 <body>
+  <h1>Viewer: Watching Stream</h1>
+  <label for="roomId">Enter Room ID to Watch:</label>
+  <input type="text" id="roomId" placeholder="Room ID">
+  <button onclick="joinStream()">Join Stream</button>
+  
+  <video id="video" autoplay controls></video>
 
-<h1>Viewer Page</h1>
-<video id="viewer-video" autoplay></video>
-<input type="text" id="room-id-input" placeholder="Enter Room ID" />
-<button id="join-room-btn">Join Room</button>
-
-<script>
-    const socket = new WebSocket('wss://final-5sjc.onrender.com');
-    const roomIdInput = document.getElementById('room-id-input');
-    const joinRoomButton = document.getElementById('join-room-btn');
-    const viewerVideo = document.getElementById('viewer-video');
+  <script>
+    let ws;
     let peerConnection;
-    const configuration = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'turn:your-turn-server.com', username: 'user', credential: 'pass' }
-        ]
-    };
 
-    socket.onopen = () => {
-        console.log('Connected to server');
-    };
+    // Function to join stream
+    function joinStream() {
+      const roomId = document.getElementById('roomId').value.trim();
+      if (!roomId) {
+        alert('Please enter a room ID.');
+        return;
+      }
 
-    socket.onmessage = (message) => {
-        const data = JSON.parse(message.data);
+      // Create WebSocket connection
+      ws = new WebSocket('wss://final-5sjc.onrender.com');
+      ws.onopen = () => {
+        console.log('Connected to WebSocket server');
 
-        if (data.type === 'offer') {
-            peerConnection = new RTCPeerConnection(configuration);
+        // Send viewer details and room ID
+        ws.send(JSON.stringify({
+          type: 'viewer',
+          roomId: roomId
+        }));
+      };
 
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer)).then(async () => {
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                socket.send(JSON.stringify({
-                    type: 'answer',
-                    roomId: data.roomId,
-                    answer: peerConnection.localDescription
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        if (message.type === 'start-stream') {
+          peerConnection = new RTCPeerConnection();
+
+          // Handle ICE candidates
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              ws.send(JSON.stringify({
+                type: 'candidate',
+                roomId: roomId,
+                candidate: event.candidate
+              }));
+            }
+          };
+
+          // Handle incoming stream
+          peerConnection.ontrack = (event) => {
+            const videoElement = document.getElementById('video');
+            videoElement.srcObject = event.streams[0];
+          };
+
+          // Respond to the streamer's offer
+          if (message.sdp) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(message.sdp));
+            peerConnection.createAnswer()
+              .then(answer => peerConnection.setLocalDescription(answer))
+              .then(() => {
+                ws.send(JSON.stringify({
+                  type: 'answer',
+                  roomId: roomId,
+                  sdp: peerConnection.localDescription
                 }));
-            });
-
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.send(JSON.stringify({
-                        type: 'candidate',
-                        roomId: data.roomId,
-                        candidate: event.candidate
-                    }));
-                }
-            };
-
-            peerConnection.ontrack = (event) => {
-                const remoteStream = event.streams[0];
-                viewerVideo.srcObject = remoteStream;
-            };
+              });
+          }
+        } else if (message.type === 'candidate') {
+          peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
         }
-
-        if (data.type === 'candidate') {
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(console.error);
-        }
-    };
-
-    joinRoomButton.onclick = () => {
-        const roomId = roomIdInput.value.trim();
-        if (roomId) {
-            socket.send(JSON.stringify({
-                type: 'join-room',
-                roomId: roomId
-            }));
-        }
-    };
-</script>
-
+      };
+    }
+  </script>
 </body>
 </html>
